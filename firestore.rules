@@ -1,0 +1,72 @@
+rules_version = '2';
+
+// =============================================================================
+// SIH 2026 Live Submission Tracker — Firestore Security Rules
+// =============================================================================
+// Security model:
+//   - problemStatements + history: PUBLIC READ (anyone can view PS data)
+//   - problemStatements + history: BACKEND WRITE ONLY (via Admin SDK, bypasses rules)
+//   - notificationEvents: BACKEND ONLY (private, never exposed to clients)
+//   - fcmTokens: USER READ-OWN, BACKEND READ ALL (write by backend API after validation)
+//   - collectorStatus: PUBLIC READ (for health dashboard)
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Problem Statements — Public read, backend-only write
+    // -------------------------------------------------------------------------
+    match /problemStatements/{psId} {
+      allow read: if true;
+      // Writes only allowed via Firebase Admin SDK (bypasses these rules)
+      allow write: if false;
+
+      // History subcollection — also public read
+      match /history/{entryId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Notification Events — Backend only (idempotency records)
+    // -------------------------------------------------------------------------
+    match /notificationEvents/{eventId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Count Decrease Anomalies — Backend only
+    // -------------------------------------------------------------------------
+    match /anomalies/{anomalyId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collector Status — Public read (for health endpoint / UI status)
+    // -------------------------------------------------------------------------
+    match /collectorStatus/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // FCM Tokens — Backend read/write only
+    // Tokens are submitted via backend API which validates PS ID first
+    // -------------------------------------------------------------------------
+    match /fcmTokens/{tokenId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Deny all other paths
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
