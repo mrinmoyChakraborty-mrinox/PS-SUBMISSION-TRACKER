@@ -83,15 +83,16 @@ def test_missing_table():
     with pytest.raises(RuntimeError, match="SOURCE_SCHEMA_CHANGED"):
         source.parse("<html><body></body></html>")
 
-def test_source_timeout(mocker):
-    """Verify that a Playwright fetch timeout propagates as an exception."""
+@pytest.mark.asyncio
+async def test_source_timeout(mocker):
+    """Verify that a fetch timeout propagates as an exception."""
     mocker.patch(
-        'app.collector.sources.sih2026.asyncio.run',
+        'app.collector.sources.sih2026.SIH2026Source.fetch_page',
         side_effect=TimeoutError("Playwright navigation timed out")
     )
     source = SIH2026Source()
     with pytest.raises(TimeoutError):
-        source.fetch_all()
+        await source.fetch_all()
 
 # Mocking tests for worker logic below
 @pytest.mark.asyncio

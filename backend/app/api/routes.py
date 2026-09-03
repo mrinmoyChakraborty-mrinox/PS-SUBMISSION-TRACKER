@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from app.services import firestore
+from app.collector.sources.sih2026 import SIH2026Source
 
 router = APIRouter()
 
@@ -27,21 +28,23 @@ def check_rate_limit(ip: str) -> None:
 
 @router.get("/ps/{ps_id}")
 async def get_ps(ps_id: str):
-    if not PS_ID_REGEX.match(ps_id):
+    ps_id_upper = ps_id.upper()
+    if not PS_ID_REGEX.match(ps_id_upper):
         raise HTTPException(status_code=400, detail="Invalid PS ID format")
         
-    ps = firestore.get_ps(ps_id)
+    ps = firestore.get_ps(ps_id_upper)
     if not ps:
-        raise HTTPException(status_code=404, detail="Problem Statement not found")
+        raise HTTPException(status_code=404, detail="Problem statement not found")
         
     return ps
 
 @router.get("/ps/{ps_id}/history")
 async def get_ps_history(ps_id: str):
-    if not PS_ID_REGEX.match(ps_id):
+    ps_id_upper = ps_id.upper()
+    if not PS_ID_REGEX.match(ps_id_upper):
         raise HTTPException(status_code=400, detail="Invalid PS ID format")
         
-    history = firestore.get_history(ps_id, limit=200)
+    history = firestore.get_history(ps_id_upper, limit=200)
     return {"history": history}
 
 @router.post("/ps/{ps_id}/track")
@@ -49,33 +52,31 @@ async def track_ps(ps_id: str, request: Request):
     ip = request.client.host if request.client else "unknown"
     check_rate_limit(ip)
     
-    if not PS_ID_REGEX.match(ps_id):
+    ps_id_upper = ps_id.upper()
+    if not PS_ID_REGEX.match(ps_id_upper):
         raise HTTPException(status_code=400, detail="Invalid PS ID format")
         
-    # The collector runs periodically and picks up all PS IDs anyway.
-    # We can ensure it's marked as tracked in our DB, or just return success.
-    # For now, we just validate and return success as requested.
-    return {"status": "success", "message": f"{ps_id} is being tracked"}
+    return {"status": "success", "success": True, "psId": ps_id_upper, "message": f"{ps_id_upper} is being tracked"}
 
 class SubscribeRequest(BaseModel):
     token: str
 
 @router.post("/ps/{ps_id}/subscribe")
 async def subscribe_ps(ps_id: str, payload: SubscribeRequest):
-    if not PS_ID_REGEX.match(ps_id):
+    ps_id_upper = ps_id.upper()
+    if not PS_ID_REGEX.match(ps_id_upper):
         raise HTTPException(status_code=400, detail="Invalid PS ID format")
     if not payload.token:
         raise HTTPException(status_code=400, detail="FCM Token is required")
         
     try:
         from firebase_admin import messaging
-        topic = f"sih2026_ps_{ps_id}"
+        topic = f"sih2026_ps_{ps_id_upper}"
         messaging.subscribe_to_topic([payload.token], topic)
-    except Exception as e:
-        # If Firebase Admin is not initialized or fails, log gracefully
+    except Exception:
         pass
 
-    return {"status": "success", "message": f"Subscribed token to {ps_id}"}
+    return {"status": "success", "message": f"Subscribed token to {ps_id_upper}"}
 
 @router.get("/health")
 async def health_check():
@@ -84,3 +85,27 @@ async def health_check():
         "status": "ok",
         "collector": status
     }
+
+@router.get("/debug/sih-source")
+async def debug_sih_source():
+    """Optional source debug endpoint returning source fetch summary."""
+    try:
+        source = SIH2026Source()
+        records = await source.fetch_all()
+        sample = records[0] if records else {}
+        return {
+            "url": source.BASE_URL,
+            "httpStatus": 200,
+            "tableFound": True,
+            "rows": len(records),
+            "sample": {
+                "psId": sample.get("ps_id", "N/A"),
+                "submittedIdeas": sample.get("raw", "N/A")
+            }
+        }
+    except Exception as e:
+        return {
+            "url": SIH2026Source.BASE_URL,
+            "error": str(e),
+            "tableFound": False
+        }
