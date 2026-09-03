@@ -10,6 +10,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
+    from curl_cffi import requests as curl_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
+
+try:
     import cloudscraper
     HAS_CLOUDSCRAPER = True
 except ImportError:
@@ -36,7 +42,22 @@ class SIH2026Source:
     
     def fetch_page(self) -> str:
         """Fetches the HTML page from the SIH source URL."""
-        # Try cloudscraper first if available to bypass Cloudflare / WAF 403 blocks
+        # 1. Try curl_cffi with Chrome TLS impersonation (bypasses Cloudflare / WAF 403 on cloud hosts)
+        if HAS_CURL_CFFI:
+            try:
+                res = curl_requests.get(
+                    self.BASE_URL,
+                    headers=self.HEADERS,
+                    impersonate="chrome120",
+                    timeout=30
+                )
+                if res.status_code == 200:
+                    return res.text
+                logger.warning(f"curl_cffi returned status {res.status_code}, trying cloudscraper fallback...")
+            except Exception as err:
+                logger.warning(f"curl_cffi fetch failed: {err}, trying cloudscraper fallback...")
+
+        # 2. Try cloudscraper fallback
         if HAS_CLOUDSCRAPER:
             try:
                 scraper = cloudscraper.create_scraper(
@@ -48,7 +69,7 @@ class SIH2026Source:
             except Exception as err:
                 logger.warning(f"Cloudscraper fetch failed: {err}, trying requests session...")
 
-        # Fallback to requests Session with full headers
+        # 3. Fallback to requests Session
         session = requests.Session()
         session.headers.update(self.HEADERS)
         response = session.get(self.BASE_URL, timeout=30)

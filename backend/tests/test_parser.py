@@ -84,7 +84,9 @@ def test_missing_table():
         source.parse("<html><body></body></html>")
 
 @responses.activate
-def test_source_timeout():
+def test_source_timeout(mocker):
+    mocker.patch('app.collector.sources.sih2026.HAS_CURL_CFFI', False)
+    mocker.patch('app.collector.sources.sih2026.HAS_CLOUDSCRAPER', False)
     responses.add(
         responses.GET,
         SIH2026Source.BASE_URL,

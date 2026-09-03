@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from app.services import firestore
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 PS_ID_REGEX = re.compile(r"^SIH26\d{3}$")
 
