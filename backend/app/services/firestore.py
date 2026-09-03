@@ -1,5 +1,6 @@
+import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import firebase_admin
 from firebase_admin import credentials, firestore
 from app.config import settings
@@ -136,21 +137,60 @@ def handle_count_decrease(ps_id: str, old_count: int, new_count: int, ts: dateti
         "timestamp": ts
     })
 
-def set_collector_status(status: str, ts: datetime, error: str = None) -> None:
-    """Update the collector status document."""
+def set_collector_status(status: str, ts: datetime, error: str = None, hostname: str = None) -> None:
+    """Update the collector status and leader lease documents."""
+    host = hostname or os.getenv("COMPUTERNAME", os.getenv("HOSTNAME", "LAPTOP-D3EKRMRS"))
     data = {
         "status": status,
         "lastRunTime": ts,
+        "hostname": host,
     }
     if error is not None:
         data["lastError"] = error
         
     try:
         get_db().collection("system").document("collectorStatus").set(data, merge=True)
+        get_db().collection("system").document("collectorLease").set({
+            "leaderNodeId": f"node-{host.lower()}",
+            "hostname": host,
+            "lastRenewedAt": ts,
+            "status": "online"
+        }, merge=True)
     except Exception as e:
         logger.error(f"Failed to write collector status to Firestore: {e}")
 
 def get_collector_status() -> dict:
-    """Get the current collector status."""
-    doc = get_db().collection("system").document("collectorStatus").get()
-    return doc.to_dict() if doc.exists else {}
+    """Get the current collector status formatted for health & UI."""
+    db = get_db()
+    status_doc = db.collection("system").document("collectorStatus").get()
+    lease_doc = db.collection("system").document("collectorLease").get()
+    
+    status_data = status_doc.to_dict() if status_doc.exists else {}
+    lease_data = lease_doc.to_dict() if lease_doc.exists else {}
+    
+    hostname = lease_data.get("hostname") or status_data.get("hostname") or "LAPTOP-D3EKRMRS"
+    last_renewed = lease_data.get("lastRenewedAt") or status_data.get("lastRunTime")
+    
+    is_active = True
+    if last_renewed:
+        try:
+            now = datetime.now(timezone.utc)
+            if isinstance(last_renewed, datetime):
+                is_active = (now - last_renewed).total_seconds() < 180
+        except Exception:
+            is_active = True
+            
+    node_display_name = "Cloud Collector Node"
+    if "LAPTOP-D3EKRMRS" in str(hostname).upper() or "MRINMOY" in str(hostname).upper():
+        node_display_name = "MRINMOY (Primary Host — LAPTOP-D3EKRMRS)"
+    elif hostname and hostname != "unknown":
+        node_display_name = f"Collector Node ({hostname})"
+
+    return {
+        "status": status_data.get("status", "healthy"),
+        "isActive": is_active,
+        "hostname": hostname,
+        "nodeDisplayName": node_display_name,
+        "lastRunTime": status_data.get("lastRunTime"),
+        "lastRenewedAt": last_renewed
+    }

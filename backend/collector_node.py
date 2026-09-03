@@ -85,8 +85,10 @@ async def acquire_or_renew_lease() -> bool:
             logger.info(f"Leader lease expired or open. Node {NODE_ID} claiming leadership...")
             
         # Claim leadership
+        hostname = os.getenv("COMPUTERNAME", os.getenv("HOSTNAME", "LAPTOP-D3EKRMRS"))
         lease_ref.set({
             "leaderNodeId": NODE_ID,
+            "hostname": hostname,
             "lastRenewedAt": now,
             "claimedAt": now
         })

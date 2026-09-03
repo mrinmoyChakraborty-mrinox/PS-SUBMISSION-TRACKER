@@ -7,6 +7,7 @@ import { StatusIndicator } from '../components/StatusIndicator';
 import { NotificationBell } from '../components/NotificationBell';
 import { StatsPanel } from '../components/StatsPanel';
 import { HistoryChart } from '../components/HistoryChart';
+import { NodeStatusBadge } from '../components/NodeStatusBadge';
 
 export const PSPage: React.FC = () => {
   const { psId } = useParams<{ psId: string }>();
@@ -178,6 +179,9 @@ export const PSPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Collector Node Status */}
+        <NodeStatusBadge />
 
         <StatsPanel data={data} prevCount={prevCount} />
         

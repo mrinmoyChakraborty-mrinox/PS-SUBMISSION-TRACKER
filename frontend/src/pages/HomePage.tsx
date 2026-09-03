@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PSCard } from '../components/PSCard';
 import { useTrackedPS } from '../hooks/useTrackedPS';
 import { validatePsId, normalizePsId } from '../utils/format';
+import { NodeStatusBadge } from '../components/NodeStatusBadge';
 
 export const HomePage: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
@@ -124,6 +125,11 @@ export const HomePage: React.FC = () => {
 
         </div>
       </section>
+
+      {/* Live Collector Node Status */}
+      <div className="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full mb-2">
+        <NodeStatusBadge />
+      </div>
 
       {/* Tracked List Section */}
       <section className="flex-grow px-4 sm:px-6 lg:px-8 py-10 max-w-7xl mx-auto w-full">
