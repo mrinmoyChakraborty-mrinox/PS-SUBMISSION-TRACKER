@@ -9,6 +9,10 @@ class Settings:
     """Settings for the application loaded from environment variables."""
     SIH_SOURCE_URL: str = os.getenv("SIH_SOURCE_URL", "https://sih.gov.in/sih2026PS")
     COLLECTOR_INTERVAL_SECONDS: int = int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "60"))
+    SCRAPER_API_KEY: str = os.getenv("SCRAPER_API_KEY", "")
+    # Cloudflare Worker proxy — set this to bypass cloud host IP blocks
+    WORKER_PROXY_URL: str = os.getenv("WORKER_PROXY_URL", "")
+    WORKER_PROXY_SECRET: str = os.getenv("WORKER_PROXY_SECRET", "")
     
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "")
     FIREBASE_CLIENT_EMAIL: str = os.getenv("FIREBASE_CLIENT_EMAIL", "")

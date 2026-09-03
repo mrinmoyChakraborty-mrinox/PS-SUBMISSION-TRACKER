@@ -41,35 +41,64 @@ class SIH2026Source:
     }
     
     def fetch_page(self) -> str:
-        """Fetches the HTML page from the SIH source URL."""
-        # 1. Try curl_cffi with Chrome TLS impersonation (bypasses Cloudflare / WAF 403 on cloud hosts)
+        """Fetches the HTML page from the SIH source URL.
+
+        Priority order:
+          1. Cloudflare Worker proxy  — guaranteed bypass (set WORKER_PROXY_URL)
+          2. curl_cffi chrome120      — TLS impersonation
+          3. cloudscraper             — JS challenge solver
+          4. requests.Session         — plain fallback
+        """
+        # ── 1. Cloudflare Worker proxy (BEST — runs inside Cloudflare's network) ──
+        if settings.WORKER_PROXY_URL:
+            try:
+                headers: dict = {}
+                if settings.WORKER_PROXY_SECRET:
+                    headers["X-Proxy-Secret"] = settings.WORKER_PROXY_SECRET
+                res = requests.get(
+                    settings.WORKER_PROXY_URL,
+                    headers=headers,
+                    timeout=30
+                )
+                if res.status_code == 200:
+                    logger.info("Fetched via Cloudflare Worker proxy ✓")
+                    return res.text
+                logger.warning(
+                    f"Worker proxy returned {res.status_code}, falling back..."
+                )
+            except Exception as err:
+                logger.warning(f"Worker proxy fetch failed: {err}, falling back...")
+
+        # ── 2. curl_cffi with Chrome TLS impersonation ───────────────────────────
         if HAS_CURL_CFFI:
             try:
                 res = curl_requests.get(
                     self.BASE_URL,
                     headers=self.HEADERS,
                     impersonate="chrome120",
-                    timeout=30
+                    timeout=30,
                 )
                 if res.status_code == 200:
                     return res.text
-                logger.warning(f"curl_cffi returned status {res.status_code}, trying cloudscraper fallback...")
+                logger.warning(
+                    f"curl_cffi returned {res.status_code}, trying cloudscraper..."
+                )
             except Exception as err:
-                logger.warning(f"curl_cffi fetch failed: {err}, trying cloudscraper fallback...")
+                logger.warning(f"curl_cffi failed: {err}, trying cloudscraper...")
 
-        # 2. Try cloudscraper fallback
+        # ── 3. cloudscraper ──────────────────────────────────────────────────────
         if HAS_CLOUDSCRAPER:
             try:
                 scraper = cloudscraper.create_scraper(
-                    browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+                    browser={"browser": "chrome", "platform": "windows", "desktop": True}
                 )
                 res = scraper.get(self.BASE_URL, headers=self.HEADERS, timeout=30)
                 if res.status_code == 200:
                     return res.text
             except Exception as err:
-                logger.warning(f"Cloudscraper fetch failed: {err}, trying requests session...")
+                logger.warning(f"cloudscraper failed: {err}, trying requests...")
 
-        # 3. Fallback to requests Session
+        # ── 4. Plain requests.Session fallback ───────────────────────────────────
         session = requests.Session()
         session.headers.update(self.HEADERS)
         response = session.get(self.BASE_URL, timeout=30)
