@@ -76,6 +76,10 @@ async def run_collection_cycle() -> Dict[str, Any]:
                 else:
                     old_count = existing.get("count", 0)
                     update_data = {
+                        "title": ps.get("title", ""),
+                        "description": ps.get("description", ""),
+                        "category": ps.get("category", ""),
+                        "theme": ps.get("theme", ""),
                         "count": new_count,
                         "capacity": capacity,
                         "remaining": capacity - new_count,

@@ -245,10 +245,37 @@ class SIH2026Source:
 
             ps_id     = ps_id_raw
             raw_count = cells[col_count].get_text(strip=True)
-            title_val = cells[col_title].get_text(strip=True)
             category  = cells[col_category].get_text(strip=True)
             theme     = cells[col_theme].get_text(strip=True)
             deadline  = cells[col_deadline].get_text(strip=True)
+
+            # ── Clean Title & Description Parsing ─────────────────────────
+            cell_title_elem = cells[col_title]
+            
+            # Look for anchor tag or link for clean title
+            anchor = cell_title_elem.find("a")
+            if anchor and anchor.get_text(strip=True):
+                title_val = anchor.get_text(strip=True)
+            else:
+                raw_cell_text = cell_title_elem.get_text(separator="\n", strip=True)
+                lines = [line.strip() for line in raw_cell_text.split("\n") if line.strip()]
+                title_val = lines[0] if lines else "SIH Problem Statement"
+
+            # Clean out any concatenated 'Problem Statement Details' suffix if present
+            if "Problem Statement Details" in title_val:
+                title_val = title_val.split("Problem Statement Details")[0].strip()
+
+            # Extract description text from modal or cell text
+            full_cell_text = cell_title_elem.get_text(separator="\n", strip=True)
+            description_val = ""
+            if "Description" in full_cell_text:
+                desc_parts = full_cell_text.split("Description", 1)
+                description_val = desc_parts[1].strip() if len(desc_parts) > 1 else ""
+            elif "Problem Statement Details" in full_cell_text:
+                desc_parts = full_cell_text.split("Problem Statement Details", 1)
+                description_val = desc_parts[1].strip() if len(desc_parts) > 1 else ""
+            else:
+                description_val = full_cell_text.replace(title_val, "").strip()
 
             try:
                 count_data = parse_submission_count(raw_count)
@@ -257,21 +284,22 @@ class SIH2026Source:
                 continue
 
             results.append({
-                "ps_id":    ps_id,
-                "title":    title_val,
-                "category": category,
-                "theme":    theme,
-                "deadline": deadline,
-                "count":    count_data["count"],
-                "capacity": count_data["capacity"],
-                "raw":      count_data["raw"],
+                "ps_id":       ps_id,
+                "title":       title_val,
+                "description": description_val,
+                "category":    category,
+                "theme":       theme,
+                "deadline":    deadline,
+                "count":       count_data["count"],
+                "capacity":    count_data["capacity"],
+                "raw":         count_data["raw"],
             })
 
         row_count = len(results)
         logger.info(f"SIH table found: true | Total PS rows parsed: {row_count}")
         if results:
             s = results[0]
-            logger.info(f"Sample: {s['ps_id']} -> {s['raw']}")
+            logger.info(f"Sample: {s['ps_id']} -> {s['title'][:50]} ({s['raw']})")
 
         return results
 

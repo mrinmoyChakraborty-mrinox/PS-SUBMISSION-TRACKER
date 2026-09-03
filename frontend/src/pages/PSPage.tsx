@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { usePSData } from '../hooks/usePSData';
 import { useTrackedPS } from '../hooks/useTrackedPS';
@@ -11,6 +11,7 @@ import { HistoryChart } from '../components/HistoryChart';
 export const PSPage: React.FC = () => {
   const { psId } = useParams<{ psId: string }>();
   const id = psId?.toUpperCase() || '';
+  const [showFullDesc, setShowFullDesc] = useState(false);
   
   const { data, loading, isInitializing, error, prevCount } = usePSData(id);
   const { isTracked, addPS } = useTrackedPS();
@@ -121,19 +122,19 @@ export const PSPage: React.FC = () => {
       {/* Main Content */}
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">{data.title}</h2>
+          <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2 leading-snug">{data.title}</h2>
           <div className="flex flex-wrap gap-2 text-sm">
-            <span className="bg-blue-900/50 text-blue-300 border border-blue-800 px-3 py-1 rounded-full">
-              {data.category}
+            <span className="bg-blue-900/50 text-blue-300 border border-blue-800 px-3 py-1 rounded-full text-xs font-medium">
+              Category: {data.category}
             </span>
-            <span className="bg-indigo-900/50 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full">
-              {data.theme}
+            <span className="bg-indigo-900/50 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full text-xs font-medium">
+              Theme: {data.theme}
             </span>
           </div>
         </div>
 
+        {/* Live Status & Progress Bar */}
         <div className="glass p-6 sm:p-8 rounded-2xl relative overflow-hidden">
-          {/* Subtle background glow based on fill percentage */}
           <div 
             className="absolute -inset-4 opacity-10 blur-2xl z-0 transition-opacity duration-1000"
             style={{ backgroundColor: data.percentage > 85 ? '#ef4444' : data.percentage > 60 ? '#f59e0b' : '#10b981' }}
@@ -149,6 +150,30 @@ export const PSPage: React.FC = () => {
             <ProgressBar count={data.count} capacity={data.capacity} percentage={data.percentage} />
           </div>
         </div>
+
+        {/* Problem Statement Description Card */}
+        {data.description && (
+          <div className="glass p-6 sm:p-8 rounded-2xl border border-gray-800 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center">
+                <svg className="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Problem Statement Details & Description
+              </h3>
+              <button 
+                onClick={() => setShowFullDesc(!showFullDesc)}
+                className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              >
+                {showFullDesc ? 'Show Less ▲' : 'Expand Details ▼'}
+              </button>
+            </div>
+            
+            <div className={`text-gray-300 text-sm leading-relaxed whitespace-pre-line font-sans ${!showFullDesc ? 'line-clamp-4' : ''}`}>
+              {data.description}
+            </div>
+          </div>
+        )}
 
         <StatsPanel data={data} prevCount={prevCount} />
         

@@ -28,6 +28,7 @@ export function usePSData(psId: string) {
       return {
         psId: rawData.psId || rawData.ps_id || targetId,
         title: rawData.title || '',
+        description: rawData.description || '',
         category: rawData.category || 'General',
         theme: rawData.theme || 'General',
         count: typeof rawData.count === 'number' ? rawData.count : 0,

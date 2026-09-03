@@ -1,6 +1,7 @@
 export interface ProblemStatement {
   psId: string;
   title: string;
+  description?: string;
   category: string;
   theme: string;
   count: number;

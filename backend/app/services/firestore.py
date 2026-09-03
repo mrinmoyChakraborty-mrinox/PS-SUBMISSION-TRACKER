@@ -50,6 +50,10 @@ def initialize_ps(ps: dict, ts: datetime) -> None:
 def update_ps(ps: dict, old_count: int, ts: datetime) -> None:
     """Update an existing PS document."""
     update_data = {
+        "title": ps.get("title", ""),
+        "description": ps.get("description", ""),
+        "category": ps.get("category", ""),
+        "theme": ps.get("theme", ""),
         "count": ps["count"],
         "capacity": ps["capacity"],
         "remaining": ps["capacity"] - ps["count"],
