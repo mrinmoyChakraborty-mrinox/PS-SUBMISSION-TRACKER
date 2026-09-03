@@ -49,8 +49,7 @@ export const ContributorsFooter: React.FC = () => {
         {/* Dynamic Contributors Display */}
         <div className="flex flex-col items-center justify-center space-y-2">
           <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-            <span>Crafted with ❤️ by</span>
-            {!hasMrinmoy && (
+            <span>Crafted with ❤️ by{!hasMrinmoy && (
               <a 
                 href="https://github.com/mrinmoyChakraborty-mrinox" 
                 target="_blank" 
@@ -59,7 +58,8 @@ export const ContributorsFooter: React.FC = () => {
               >
                 Mrinmoy Chakraborty
               </a>
-            )}
+            )}</span>
+            
             <span>and GitHub Contributors</span>
           </p>
 
