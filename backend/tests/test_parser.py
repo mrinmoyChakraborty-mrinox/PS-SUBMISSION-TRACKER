@@ -83,17 +83,14 @@ def test_missing_table():
     with pytest.raises(RuntimeError, match="SOURCE_SCHEMA_CHANGED"):
         source.parse("<html><body></body></html>")
 
-@responses.activate
 def test_source_timeout(mocker):
-    mocker.patch('app.collector.sources.sih2026.HAS_CURL_CFFI', False)
-    mocker.patch('app.collector.sources.sih2026.HAS_CLOUDSCRAPER', False)
-    responses.add(
-        responses.GET,
-        SIH2026Source.BASE_URL,
-        body=Timeout("Connection timed out")
+    """Verify that a Playwright fetch timeout propagates as an exception."""
+    mocker.patch(
+        'app.collector.sources.sih2026.asyncio.run',
+        side_effect=TimeoutError("Playwright navigation timed out")
     )
     source = SIH2026Source()
-    with pytest.raises(Timeout):
+    with pytest.raises(TimeoutError):
         source.fetch_all()
 
 # Mocking tests for worker logic below
