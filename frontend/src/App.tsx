@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
+import { ContributorsFooter } from './components/ContributorsFooter';
 import { HomePage } from './pages/HomePage';
 import { PSPage } from './pages/PSPage';
 
@@ -16,6 +17,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
+        <ContributorsFooter />
       </div>
     </BrowserRouter>
   );

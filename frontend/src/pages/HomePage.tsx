@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { PSCard } from '../components/PSCard';
 import { useTrackedPS } from '../hooks/useTrackedPS';
 import { validatePsId, normalizePsId } from '../utils/format';
@@ -159,15 +159,6 @@ export const HomePage: React.FC = () => {
           </div>
         )}
       </section>
-
-      {/* Footer */}
-      <footer className="py-8 text-center text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800 flex-shrink-0 bg-slate-100/50 dark:bg-navy-900/50 space-y-2">
-        <div className="flex items-center justify-center space-x-2">
-          <img src="/logo.png" alt="Logo" className="w-5 h-5 rounded-md object-contain" />
-          <span className="font-bold text-slate-700 dark:text-slate-300">SIH TRACKER</span>
-        </div>
-        <p>Data mirrored live from publicly available Smart India Hackathon 2026 portal.</p>
-      </footer>
 
     </div>
   );
