@@ -29,15 +29,36 @@ export function usePSData(psId: string) {
             return newData;
           });
           setError(null);
+          setLoading(false);
         } else {
-          setError('Problem Statement not found or not tracked yet.');
+          // If Firestore doc isn't in client cache or initialized yet, fallback to REST API
+          api.getPS(psId)
+            .then((resData) => {
+              setData(resData);
+              setError(null);
+            })
+            .catch(() => {
+              setError('Problem Statement details are still initializing from SIH portal. Please check back in 1 minute.');
+            })
+            .finally(() => {
+              setLoading(false);
+            });
         }
-        setLoading(false);
       },
       (err) => {
         console.error(err);
-        setError('Error connecting to live updates.');
-        setLoading(false);
+        // Fallback to REST API on Firestore connection error
+        api.getPS(psId)
+          .then((resData) => {
+            setData(resData);
+            setError(null);
+          })
+          .catch(() => {
+            setError('Error connecting to live updates.');
+          })
+          .finally(() => {
+            setLoading(false);
+          });
       }
     );
 

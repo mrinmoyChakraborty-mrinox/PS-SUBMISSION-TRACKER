@@ -52,11 +52,15 @@ class SIH2026Source:
         # ── 1. Cloudflare Worker proxy (BEST — runs inside Cloudflare's network) ──
         if settings.WORKER_PROXY_URL:
             try:
+                url = settings.WORKER_PROXY_URL.strip()
+                if not (url.startswith("http://") or url.startswith("https://")):
+                    url = f"https://{url}"
+
                 headers: dict = {}
                 if settings.WORKER_PROXY_SECRET:
                     headers["X-Proxy-Secret"] = settings.WORKER_PROXY_SECRET
                 res = requests.get(
-                    settings.WORKER_PROXY_URL,
+                    url,
                     headers=headers,
                     timeout=30
                 )
