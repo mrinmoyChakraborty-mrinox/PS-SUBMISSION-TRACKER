@@ -8,14 +8,12 @@ from app.notifications.fcm import send_ps_notification
 
 logger = logging.getLogger(__name__)
 
-# Mutex lock to prevent overlapping collection cycles if one cycle takes longer than 60s
 _cycle_lock = asyncio.Lock()
 
 async def run_collection_cycle() -> Dict[str, Any]:
     """Run one iteration of the SIH 2026 collection process.
     
-    Guaranteed async execution within the FastAPI / AsyncIOScheduler event loop.
-    Returns a result dict summarizing the cycle outcome.
+    Uses high-speed batch reads & atomic batch writes for all 230+ PS records.
     """
     if _cycle_lock.locked():
         logger.warning("Previous collection cycle is still running. Skipping this interval.")
@@ -37,52 +35,77 @@ async def run_collection_cycle() -> Dict[str, Any]:
         try:
             source = SIH2026Source()
             
-            # Fetch all PS rows asynchronously (no nested asyncio.run!)
-            logger.info(f"Fetching: {source.BASE_URL}")
+            logger.info(f"Fetching SIH page: {source.BASE_URL}")
             results: List[Dict[str, Any]] = await source.fetch_all()
+            
+            if not results:
+                logger.warning("No PS records extracted from source.")
+                firestore.set_collector_status("warning", start_time, "0 PS records extracted")
+                return {**result_summary, "status": "warning", "durationMs": int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)}
+
+            # Single batch read of all existing documents in Firestore
+            logger.info("Reading existing PS documents from Firestore...")
+            existing_map = firestore.get_all_ps_map()
+            
+            items_to_set: List[Dict[str, Any]] = []
+            items_to_update: List[tuple[str, Dict[str, Any]]] = []
             
             changed_count = 0
             notification_count = 0
-            
+
             for ps in results:
                 ps_id = ps["ps_id"]
                 new_count = ps["count"]
                 capacity = ps["capacity"]
                 
-                try:
-                    existing = firestore.get_ps(ps_id)
+                existing = existing_map.get(ps_id)
+                
+                if existing is None:
+                    # Initial observation — format new document data
+                    ps_data = {
+                        **ps,
+                        "firstSeenAt": start_time,
+                        "status": "live",
+                        "lastNotifiedCount": None,
+                        "remaining": capacity - new_count,
+                        "percentage": (new_count / capacity * 100) if capacity > 0 else 0,
+                        "lastCountChangeAt": start_time,
+                        "lastSuccessfulFetchAt": start_time
+                    }
+                    items_to_set.append(ps_data)
+                else:
+                    old_count = existing.get("count", 0)
+                    update_data = {
+                        "count": new_count,
+                        "capacity": capacity,
+                        "remaining": capacity - new_count,
+                        "percentage": (new_count / capacity * 100) if capacity > 0 else 0,
+                        "lastSuccessfulFetchAt": start_time
+                    }
                     
-                    if existing is None:
-                        # Rule 24: Initial observation — store current count, but NO notification
-                        logger.info(f"Initializing new PS: {ps_id} with count {new_count}/{capacity} (No notification)")
-                        firestore.initialize_ps(ps, start_time)
-                    else:
-                        old_count = existing.get("count", 0)
+                    if new_count > old_count:
+                        logger.info(f"Count increased for {ps_id}: {old_count} -> {new_count}")
+                        update_data["lastCountChangeAt"] = start_time
+                        items_to_update.append((ps_id, update_data))
+                        firestore.create_history_entry(ps_id, new_count, old_count, start_time)
+                        changed_count += 1
                         
-                        if new_count > old_count:
-                            logger.info(f"{ps_id}: old={old_count} new={new_count} changed=true")
-                            firestore.update_ps(ps, old_count, start_time)
-                            firestore.create_history_entry(ps_id, new_count, old_count, start_time)
-                            changed_count += 1
-                            
-                            # Rule 25: Deterministic event ID for idempotency (e.g. SIH26001_328)
-                            event_id = f"{ps_id}_{new_count}"
-                            if not firestore.notification_event_exists(event_id):
-                                success = send_ps_notification(ps_id, new_count, capacity)
-                                if success:
-                                    firestore.create_notification_event(ps_id, new_count, old_count, start_time)
-                                    logger.info(f"FCM notification sent for {event_id}")
-                                    notification_count += 1
-                        elif new_count == old_count:
-                            firestore.update_last_successful_fetch(ps_id, start_time)
-                        else:
-                            # Rule 23: Count decrease anomaly handling
-                            logger.warning(f"{ps_id}: count decreased from {old_count} to {new_count} (Anomaly logged)")
-                            firestore.handle_count_decrease(ps_id, old_count, new_count, start_time)
-                            firestore.update_ps(ps, old_count, start_time)
-                            
-                except Exception as ps_err:
-                    logger.error(f"Error processing {ps_id}: {ps_err}")
+                        event_id = f"{ps_id}_{new_count}"
+                        if not firestore.notification_event_exists(event_id):
+                            success = send_ps_notification(ps_id, new_count, capacity)
+                            if success:
+                                firestore.create_notification_event(ps_id, new_count, old_count, start_time)
+                                notification_count += 1
+                    elif new_count == old_count:
+                        items_to_update.append((ps_id, update_data))
+                    else:
+                        logger.warning(f"Count decreased for {ps_id}: {old_count} -> {new_count}")
+                        firestore.handle_count_decrease(ps_id, old_count, new_count, start_time)
+                        items_to_update.append((ps_id, update_data))
+
+            # Commit all Firestore operations in high-speed atomic batches
+            if items_to_set or items_to_update:
+                firestore.batch_write_ps(items_to_set, items_to_update)
 
             duration_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             
@@ -95,7 +118,7 @@ async def run_collection_cycle() -> Dict[str, Any]:
             })
             
             firestore.set_collector_status("healthy", start_time)
-            logger.info(f"Collection cycle completed successfully in {duration_ms}ms ({len(results)} PSs processed)")
+            logger.info(f"Collection cycle completed successfully in {duration_ms}ms ({len(results)} PSs written to Firestore)")
             return result_summary
 
         except Exception as err:

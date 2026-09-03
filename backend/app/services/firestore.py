@@ -28,6 +28,11 @@ def get_ps(ps_id: str) -> dict | None:
     doc = get_db().collection("problemStatements").document(ps_id).get()
     return doc.to_dict() if doc.exists else None
 
+def get_all_ps_map() -> dict:
+    """Retrieve all PS documents in a single fast query: { ps_id: doc_dict }."""
+    docs = get_db().collection("problemStatements").stream()
+    return {doc.id: doc.to_dict() for doc in docs}
+
 def initialize_ps(ps: dict, ts: datetime) -> None:
     """Initialize a new PS document."""
     ps_data = {
@@ -55,6 +60,31 @@ def update_ps(ps: dict, old_count: int, ts: datetime) -> None:
         update_data["lastCountChangeAt"] = ts
         
     get_db().collection("problemStatements").document(ps["ps_id"]).update(update_data)
+
+def batch_write_ps(items_to_set: list[dict], items_to_update: list[tuple[str, dict]]) -> None:
+    """Perform fast atomic batch writes to Firestore (max 400 ops per batch)."""
+    db = get_db()
+    all_ops = []
+    
+    for ps_data in items_to_set:
+        ref = db.collection("problemStatements").document(ps_data["ps_id"])
+        all_ops.append(("set", ref, ps_data))
+        
+    for ps_id, update_data in items_to_update:
+        ref = db.collection("problemStatements").document(ps_id)
+        all_ops.append(("update", ref, update_data))
+        
+    chunk_size = 400
+    for i in range(0, len(all_ops), chunk_size):
+        chunk = all_ops[i:i + chunk_size]
+        batch = db.batch()
+        for op_type, ref, data in chunk:
+            if op_type == "set":
+                batch.set(ref, data)
+            elif op_type == "update":
+                batch.update(ref, data)
+        batch.commit()
+    logger.info(f"Committed {len(all_ops)} batch operations to Firestore ✓")
 
 def update_last_successful_fetch(ps_id: str, ts: datetime) -> None:
     """Update the lastSuccessfulFetchAt field."""
