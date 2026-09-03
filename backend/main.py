@@ -1,57 +1,32 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import settings
 from app.api.routes import router
-from app.collector.worker import run_collection_cycle
-from app.collector.sources.sih2026 import SIH2026Source
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Starting up FastAPI application...")
+    """API-only lifespan. No collector or scheduler runs here.
     
-    # Pre-warm shared browser instance
-    try:
-        await SIH2026Source.init_browser()
-    except Exception as e:
-        logger.warning(f"Could not pre-warm browser on startup: {e}")
-        
-    # Configure scheduler with max_instances=1 and coalesce=True
-    scheduler.add_job(
-        run_collection_cycle, 
-        'interval', 
-        seconds=settings.COLLECTOR_INTERVAL_SECONDS,
-        id='sih_collection',
-        max_instances=1,
-        coalesce=True,
-        replace_existing=True
-    )
-    scheduler.start()
-    
-    # Run the first cycle 5 seconds after startup
-    asyncio.create_task(initial_run())
-    
+    The collector is fully isolated in collector_node.py and runs
+    as a standalone process on the dedicated scraping machine.
+    """
+    logger.info("SIH 2026 Tracker API starting up (API-only mode — no collector)")
     yield
-    
-    # Shutdown
-    logger.info("Shutting down application...")
-    scheduler.shutdown(wait=False)
-    await SIH2026Source.close_browser()
+    logger.info("SIH 2026 Tracker API shutting down")
 
-async def initial_run():
-    await asyncio.sleep(5)
-    await run_collection_cycle()
 
-app = FastAPI(lifespan=lifespan, title="SIH 2026 Submissions Tracker")
+app = FastAPI(
+    lifespan=lifespan,
+    title="SIH 2026 Submissions Tracker API",
+    description="REST API for SIH 2026 live submission counts. Collector runs separately via collector_node.py.",
+    version="1.0.0"
+)
 
 origins = [o.strip() for o in settings.CORS_ORIGINS if o.strip()]
 is_wildcard = "*" in origins or not origins
@@ -68,7 +43,12 @@ app.add_middleware(
 @app.get("/")
 @app.head("/")
 async def root():
-    return {"status": "ok", "app": "SIH 2026 Submissions Tracker API"}
+    return {
+        "status": "ok",
+        "app": "SIH 2026 Submissions Tracker API",
+        "mode": "api-only",
+        "note": "Collector runs as a standalone process (collector_node.py) on the dedicated scraping machine."
+    }
 
 # Mount API router
 app.include_router(router, prefix="/api")
