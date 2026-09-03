@@ -11,7 +11,8 @@ export const api = {
   getHistory: async (psId: string): Promise<HistoryEntry[]> => {
     const res = await fetch(`${BASE}/ps/${psId}/history`);
     if (!res.ok) throw new Error('Failed to fetch history');
-    return res.json();
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.history || []);
   },
   trackPS: async (psId: string): Promise<void> => {
     const res = await fetch(`${BASE}/ps/${psId}/track`, { method: 'POST' });

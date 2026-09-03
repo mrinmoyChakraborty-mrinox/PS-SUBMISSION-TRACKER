@@ -14,15 +14,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ psId }) => {
   const ranges = ['1H', '6H', '12H', '24H', '7D'];
 
   const chartData = history.map(d => ({
-    time: new Date(d.timestamp).getTime(),
+    time: typeof d.timestamp === 'number' ? d.timestamp : new Date(d.timestamp).getTime(),
     count: d.count
-  })).sort((a, b) => a.time - b.time);
+  })).filter(d => !isNaN(d.time)).sort((a, b) => a.time - b.time);
 
   return (
     <div className="glass p-6 rounded-xl mt-8">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xl font-bold text-white">Submission History</h3>
-        <div className="flex bg-gray-900 rounded-lg p-1">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h3 className="text-xl font-bold text-white">Submission History</h3>
+          <p className="text-xs text-gray-400 mt-1">Track count changes over time</p>
+        </div>
+        <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-800">
           {ranges.map(r => (
             <button
               key={r}
@@ -38,11 +41,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ psId }) => {
       </div>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center text-gray-400">Loading history...</div>
+        <div className="h-64 flex items-center justify-center text-gray-400">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mr-3" />
+          <span>Loading history logs...</span>
+        </div>
       ) : error ? (
-        <div className="h-64 flex items-center justify-center text-red-400">{error}</div>
+        <div className="h-64 flex items-center justify-center text-gray-500 text-sm">{error}</div>
       ) : chartData.length === 0 ? (
-        <div className="h-64 flex items-center justify-center text-gray-500">No history data available for this range.</div>
+        <div className="h-64 flex flex-col items-center justify-center text-gray-500 text-sm space-y-2">
+          <span>📊 No history entries logged yet for this time range.</span>
+          <span className="text-xs text-gray-600">History points will appear here automatically when submission counts change.</span>
+        </div>
       ) : (
         <div className="h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">

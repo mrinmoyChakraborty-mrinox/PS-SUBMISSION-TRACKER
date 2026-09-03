@@ -19,7 +19,7 @@ export interface ProblemStatement {
 export interface HistoryEntry {
   count: number;
   previousCount: number;
-  timestamp: string;
+  timestamp: string | number;
 }
 
 export interface CollectorStatus {
