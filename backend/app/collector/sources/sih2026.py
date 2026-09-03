@@ -5,18 +5,53 @@ from typing import List, Dict, Any
 from app.config import settings
 from app.collector.parser import parse_submission_count
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    import cloudscraper
+    HAS_CLOUDSCRAPER = True
+except ImportError:
+    HAS_CLOUDSCRAPER = False
+
 class SIH2026Source:
     """Source handler for SIH 2026 Problem Statements page."""
     BASE_URL = settings.SIH_SOURCE_URL
     HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9"
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Ch-Ua": '"Not-A.Brand";v="99", "Chromium";v="124", "Google Chrome";v="124"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "Cache-Control": "max-age=0",
     }
     
     def fetch_page(self) -> str:
         """Fetches the HTML page from the SIH source URL."""
-        response = requests.get(self.BASE_URL, headers=self.HEADERS, timeout=30)
+        # Try cloudscraper first if available to bypass Cloudflare / WAF 403 blocks
+        if HAS_CLOUDSCRAPER:
+            try:
+                scraper = cloudscraper.create_scraper(
+                    browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+                )
+                res = scraper.get(self.BASE_URL, headers=self.HEADERS, timeout=30)
+                if res.status_code == 200:
+                    return res.text
+            except Exception as err:
+                logger.warning(f"Cloudscraper fetch failed: {err}, trying requests session...")
+
+        # Fallback to requests Session with full headers
+        session = requests.Session()
+        session.headers.update(self.HEADERS)
+        response = session.get(self.BASE_URL, timeout=30)
         response.raise_for_status()
         return response.text
         

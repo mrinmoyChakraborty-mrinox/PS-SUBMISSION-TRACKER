@@ -111,7 +111,10 @@ def set_collector_status(status: str, ts: datetime, error: str = None) -> None:
     if error is not None:
         data["lastError"] = error
         
-    get_db().collection("system").document("collectorStatus").set(data, merge=True)
+    try:
+        get_db().collection("system").document("collectorStatus").set(data, merge=True)
+    except Exception as e:
+        logger.error(f"Failed to write collector status to Firestore: {e}")
 
 def get_collector_status() -> dict:
     """Get the current collector status."""
