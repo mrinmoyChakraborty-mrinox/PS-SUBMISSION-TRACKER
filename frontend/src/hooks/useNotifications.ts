@@ -30,7 +30,8 @@ export function useNotifications(psId: string) {
 
       const token = await getToken(messaging, { vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY });
       
-      const res = await fetch(`/api/ps/${psId}/subscribe`, {
+      const BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+      const res = await fetch(`${BASE}/ps/${psId}/subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })

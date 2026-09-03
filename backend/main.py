@@ -40,10 +40,13 @@ async def initial_run():
 
 app = FastAPI(lifespan=lifespan, title="SIH 2026 Submissions Tracker")
 
+origins = [o.strip() for o in settings.CORS_ORIGINS if o.strip()]
+is_wildcard = "*" in origins or not origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"] if is_wildcard else origins,
+    allow_credentials=not is_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )

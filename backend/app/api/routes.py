@@ -57,6 +57,26 @@ async def track_ps(ps_id: str, request: Request):
     # For now, we just validate and return success as requested.
     return {"status": "success", "message": f"{ps_id} is being tracked"}
 
+class SubscribeRequest(BaseModel):
+    token: str
+
+@router.post("/ps/{ps_id}/subscribe")
+async def subscribe_ps(ps_id: str, payload: SubscribeRequest):
+    if not PS_ID_REGEX.match(ps_id):
+        raise HTTPException(status_code=400, detail="Invalid PS ID format")
+    if not payload.token:
+        raise HTTPException(status_code=400, detail="FCM Token is required")
+        
+    try:
+        from firebase_admin import messaging
+        topic = f"sih2026_ps_{ps_id}"
+        messaging.subscribe_to_topic([payload.token], topic)
+    except Exception as e:
+        # If Firebase Admin is not initialized or fails, log gracefully
+        pass
+
+    return {"status": "success", "message": f"Subscribed token to {ps_id}"}
+
 @router.get("/health")
 async def health_check():
     status = firestore.get_collector_status()

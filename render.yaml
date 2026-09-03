@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: sih-2026-tracker-backend
+    env: python
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SIH_SOURCE_URL
+        value: https://sih.gov.in/sih2026PS
+      - key: COLLECTOR_INTERVAL_SECONDS
+        value: 60
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false

@@ -1,6 +1,6 @@
 import { ProblemStatement, HistoryEntry, CollectorStatus } from '../types';
 
-const BASE = '/api';
+const BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 export const api = {
   getPS: async (psId: string): Promise<ProblemStatement> => {
