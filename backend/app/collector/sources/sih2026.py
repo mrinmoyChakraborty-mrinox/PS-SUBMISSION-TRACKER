@@ -9,7 +9,6 @@ from app.collector.parser import parse_submission_count
 logger = logging.getLogger(__name__)
 
 # Column indices in table#dataTablePS (0-based)
-# Confirmed from real SIH 2026 page structure
 COL_TITLE    = 2
 COL_CATEGORY = 3
 COL_PS_ID    = 4
@@ -23,16 +22,13 @@ PS_ID_PATTERN = re.compile(r"^SIH26\d{3}$")
 class SIH2026Source:
     """Async source handler for SIH 2026 Problem Statements page.
 
-    Uses Playwright headless Chromium as a real browser so it passes
-    Cloudflare's JS integrity check.  All methods are async — call
-    them with `await` from inside the running event loop; never wrap
-    with asyncio.run().
+    Uses Playwright headless Chromium as a real browser to pass Cloudflare checks,
+    expands DataTables pagination to 100 rows per page, and iterates through all
+    pages to capture ALL 230+ Problem Statements in a single cycle.
     """
 
     BASE_URL: str = settings.SIH_SOURCE_URL
 
-    # Shared browser instance reused across cycles to avoid repeated
-    # cold-start overhead.  Managed via init_browser / close_browser.
     _browser = None
     _playwright = None
 
@@ -70,13 +66,10 @@ class SIH2026Source:
     # ── Fetch ─────────────────────────────────────────────────────────────
 
     async def fetch_page(self) -> str:
-        """Fetch the SIH page HTML using the shared headless Chromium instance.
+        """Fetch the SIH page HTML, expand page length to 100, and paginate through
+        all pages so all 230+ Problem Statements are retrieved.
 
-        Waits for table#dataTablePS to appear in the DOM so we know the
-        DataTable has finished rendering before we extract HTML.
-
-        Returns the full rendered page HTML.
-        Raises RuntimeError on navigation failure or bot-block detection.
+        Returns combined HTML containing all table rows.
         """
         if self._browser is None:
             await self.init_browser()
@@ -101,7 +94,7 @@ class SIH2026Source:
                 timeout=30_000,
             )
 
-            status  = response.status if response else 0
+            status = response.status if response else 0
             final_url = page.url
 
             logger.info(f"HTTP status: {status}")
@@ -109,28 +102,81 @@ class SIH2026Source:
 
             if status >= 400:
                 raise RuntimeError(
-                    f"HTTP {status} from {self.BASE_URL} "
-                    f"(final URL: {final_url})"
+                    f"HTTP {status} from {self.BASE_URL} (final URL: {final_url})"
                 )
 
-            # Wait for the DataTable to render
+            # Wait for DataTable to render
             try:
                 await page.wait_for_selector(
                     "table#dataTablePS tbody tr",
                     timeout=20_000,
                 )
             except Exception:
-                # Still try — page.content() may already have what we need
-                logger.warning(
-                    "table#dataTablePS rows not found within timeout; "
-                    "proceeding with current HTML"
-                )
+                logger.warning("table#dataTablePS rows not found within timeout")
 
-            html = await page.content()
-            title = await page.title()
-            logger.info(f"Page title:  {title}")
-            logger.info(f"HTML length: {len(html):,} bytes")
-            return html
+            # ── Expand DataTables length dropdown to 100 rows ────────────────
+            select_elem = await page.query_selector("select[name='dataTablePS_length']")
+            if select_elem:
+                options = await page.eval_on_selector_all(
+                    "select[name='dataTablePS_length'] option",
+                    "els => els.map(e => ({val: e.value, text: e.textContent}))"
+                )
+                vals = [opt['val'] for opt in options]
+                target_val = "100" if "100" in vals else ("-1" if "-1" in vals else vals[-1])
+                logger.info(f"Expanding DataTable length to {target_val} rows per page")
+                await page.select_option("select[name='dataTablePS_length']", target_val)
+                await page.wait_for_timeout(1500)
+
+            # ── Collect all table rows across all pages ─────────────
+            html_parts: List[str] = []
+            
+            # First page
+            first_page_html = await page.content()
+            html_parts.append(first_page_html)
+
+            # Paginate through subsequent pages if Next button exists
+            next_btn = await page.query_selector("li.next:not(.disabled) a, a#dataTablePS_next:not(.disabled)")
+            page_count = 1
+
+            while next_btn and page_count < 20:
+                is_disabled = await next_btn.eval_on_selector("..", "el => el.classList.contains('disabled')") if next_btn else True
+                if is_disabled:
+                    break
+
+                page_count += 1
+                logger.info(f"Navigating to page {page_count}...")
+                await next_btn.click()
+                await page.wait_for_timeout(1500)
+
+                pg_html = await page.content()
+                html_parts.append(pg_html)
+
+                next_btn = await page.query_selector("li.next:not(.disabled) a, a#dataTablePS_next:not(.disabled)")
+
+            logger.info(f"Extracted HTML across {page_count} pages")
+            
+            # Combine HTML parts into one document
+            if len(html_parts) == 1:
+                return html_parts[0]
+            
+            # Combine all tbody tr elements into the first HTML document
+            master_soup = BeautifulSoup(html_parts[0], "html.parser")
+            master_table = master_soup.find("table", id="dataTablePS")
+            master_tbody = master_table.find("tbody") if master_table else None
+
+            if master_tbody:
+                for part in html_parts[1:]:
+                    part_soup = BeautifulSoup(part, "html.parser")
+                    part_table = part_soup.find("table", id="dataTablePS")
+                    if part_table:
+                        part_tbody = part_table.find("tbody")
+                        if part_tbody:
+                            for tr in part_tbody.find_all("tr", recursive=False):
+                                master_tbody.append(tr)
+
+            combined_html = str(master_soup)
+            logger.info(f"Combined total HTML length: {len(combined_html):,} bytes")
+            return combined_html
 
         finally:
             await page.close()
@@ -142,7 +188,7 @@ class SIH2026Source:
         """Parse rendered HTML and return a list of PS dicts.
 
         Uses dynamic column-header detection with known-index fallback.
-        Raises RuntimeError if the table is missing (bot block / schema change).
+        Ignores inline modal tables using recursive=False.
         """
         soup = BeautifulSoup(html, "html.parser")
         table = soup.find("table", id="dataTablePS")
@@ -158,7 +204,7 @@ class SIH2026Source:
                 "SOURCE_SCHEMA_CHANGED: tbody missing from table#dataTablePS"
             )
 
-        # Dynamic header → column index mapping (resilient to column reordering)
+        # Dynamic header → column index mapping
         col_ps_id    = COL_PS_ID
         col_count    = COL_COUNT
         col_title    = COL_TITLE
@@ -222,7 +268,7 @@ class SIH2026Source:
             })
 
         row_count = len(results)
-        logger.info(f"SIH table found: true | Rows parsed: {row_count}")
+        logger.info(f"SIH table found: true | Total PS rows parsed: {row_count}")
         if results:
             s = results[0]
             logger.info(f"Sample: {s['ps_id']} -> {s['raw']}")
@@ -232,11 +278,7 @@ class SIH2026Source:
     # ── Public entry point ────────────────────────────────────────────────
 
     async def fetch_all(self) -> List[Dict[str, Any]]:
-        """Fetch the SIH page and return all parsed PS records.
-
-        This is the primary entry point for the collector worker.
-        Must be awaited — never wrapped in asyncio.run().
-        """
+        """Fetch the SIH page across all pages and return all parsed PS records."""
         html = await self.fetch_page()
         return self.parse(html)
 
