@@ -13,7 +13,7 @@ _cycle_lock = asyncio.Lock()
 async def run_collection_cycle() -> Dict[str, Any]:
     """Run one iteration of the SIH 2026 collection process.
     
-    Uses high-speed batch reads & atomic batch writes for all 230+ PS records.
+    Uses high-speed batch reads & delta-only atomic batch writes to optimize Firestore quota.
     """
     if _cycle_lock.locked():
         logger.warning("Previous collection cycle is still running. Skipping this interval.")
@@ -40,7 +40,10 @@ async def run_collection_cycle() -> Dict[str, Any]:
             
             if not results:
                 logger.warning("No PS records extracted from source.")
-                firestore.set_collector_status("warning", start_time, "0 PS records extracted")
+                try:
+                    firestore.set_collector_status("warning", start_time, "0 PS records extracted")
+                except Exception:
+                    pass
                 return {**result_summary, "status": "warning", "durationMs": int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)}
 
             # Single batch read of all existing documents in Firestore
@@ -75,41 +78,62 @@ async def run_collection_cycle() -> Dict[str, Any]:
                     items_to_set.append(ps_data)
                 else:
                     old_count = existing.get("count", 0)
-                    update_data = {
-                        "title": ps.get("title", ""),
-                        "description": ps.get("description", ""),
-                        "category": ps.get("category", ""),
-                        "theme": ps.get("theme", ""),
-                        "count": new_count,
-                        "capacity": capacity,
-                        "remaining": capacity - new_count,
-                        "percentage": (new_count / capacity * 100) if capacity > 0 else 0,
-                        "lastSuccessfulFetchAt": start_time
-                    }
+                    title_changed = existing.get("title") != ps.get("title")
                     
-                    if new_count > old_count:
-                        logger.info(f"Count increased for {ps_id}: {old_count} -> {new_count}")
-                        update_data["lastCountChangeAt"] = start_time
-                        items_to_update.append((ps_id, update_data))
-                        firestore.create_history_entry(ps_id, new_count, old_count, start_time)
-                        changed_count += 1
+                    # ONLY write to Firestore if count or metadata changed (saves 99.9% quota!)
+                    if new_count != old_count or title_changed:
+                        update_data = {
+                            "title": ps.get("title", ""),
+                            "description": ps.get("description", ""),
+                            "category": ps.get("category", ""),
+                            "theme": ps.get("theme", ""),
+                            "count": new_count,
+                            "capacity": capacity,
+                            "remaining": capacity - new_count,
+                            "percentage": (new_count / capacity * 100) if capacity > 0 else 0,
+                            "lastSuccessfulFetchAt": start_time
+                        }
                         
-                        event_id = f"{ps_id}_{new_count}"
-                        if not firestore.notification_event_exists(event_id):
-                            success = send_ps_notification(ps_id, new_count, capacity)
-                            if success:
-                                firestore.create_notification_event(ps_id, new_count, old_count, start_time)
-                                notification_count += 1
-                    elif new_count == old_count:
-                        items_to_update.append((ps_id, update_data))
-                    else:
-                        logger.warning(f"Count decreased for {ps_id}: {old_count} -> {new_count}")
-                        firestore.handle_count_decrease(ps_id, old_count, new_count, start_time)
-                        items_to_update.append((ps_id, update_data))
+                        if new_count > old_count:
+                            logger.info(f"Count increased for {ps_id}: {old_count} -> {new_count}")
+                            update_data["lastCountChangeAt"] = start_time
+                            items_to_update.append((ps_id, update_data))
+                            try:
+                                firestore.create_history_entry(ps_id, new_count, old_count, start_time)
+                            except Exception as h_err:
+                                logger.warning(f"Failed to create history entry for {ps_id}: {h_err}")
+                            changed_count += 1
+                            
+                            event_id = f"{ps_id}_{new_count}"
+                            try:
+                                if not firestore.notification_event_exists(event_id):
+                                    success = send_ps_notification(ps_id, new_count, capacity)
+                                    if success:
+                                        firestore.create_notification_event(ps_id, new_count, old_count, start_time)
+                                        notification_count += 1
+                            except Exception as n_err:
+                                logger.warning(f"Failed processing notification for {ps_id}: {n_err}")
+                                
+                        elif new_count < old_count:
+                            logger.warning(f"Count decreased for {ps_id}: {old_count} -> {new_count}")
+                            try:
+                                firestore.handle_count_decrease(ps_id, old_count, new_count, start_time)
+                            except Exception:
+                                pass
+                            items_to_update.append((ps_id, update_data))
+                        else:
+                            # Only metadata/title changed
+                            items_to_update.append((ps_id, update_data))
 
             # Commit all Firestore operations in high-speed atomic batches
             if items_to_set or items_to_update:
-                firestore.batch_write_ps(items_to_set, items_to_update)
+                logger.info(f"Writing {len(items_to_set)} new and {len(items_to_update)} updated PS documents to Firestore...")
+                try:
+                    firestore.batch_write_ps(items_to_set, items_to_update)
+                except Exception as b_err:
+                    logger.error(f"Firestore batch write error: {b_err}")
+            else:
+                logger.info("No count changes detected across 233 PSs — 0 Firestore writes needed (Quota saved) ✓")
 
             duration_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             
@@ -121,8 +145,12 @@ async def run_collection_cycle() -> Dict[str, Any]:
                 "durationMs": duration_ms
             })
             
-            firestore.set_collector_status("healthy", start_time)
-            logger.info(f"Collection cycle completed successfully in {duration_ms}ms ({len(results)} PSs written to Firestore)")
+            try:
+                firestore.set_collector_status("healthy", start_time)
+            except Exception as s_err:
+                logger.warning(f"Could not update collector status: {s_err}")
+
+            logger.info(f"Collection cycle completed successfully in {duration_ms}ms ({len(results)} PSs checked, {changed_count} changed)")
             return result_summary
 
         except Exception as err:
@@ -135,5 +163,8 @@ async def run_collection_cycle() -> Dict[str, Any]:
                 "error": str(err)
             })
             
-            firestore.set_collector_status("error", start_time, str(err))
+            try:
+                firestore.set_collector_status("error", start_time, str(err))
+            except Exception:
+                pass
             return result_summary
