@@ -37,10 +37,10 @@ export function usePSData(psId: string) {
         percentage: typeof rawData.percentage === 'number' ? rawData.percentage : 0,
         raw: rawData.raw || `${rawData.count || 0}/${rawData.capacity || 500}`,
         status: rawData.status || 'live',
-        firstSeenAt: rawData.firstSeenAt ? String(rawData.firstSeenAt) : null,
-        lastUpdatedAt: rawData.lastUpdatedAt ? String(rawData.lastUpdatedAt) : null,
-        lastCountChangeAt: rawData.lastCountChangeAt ? String(rawData.lastCountChangeAt) : null,
-        lastSuccessfulFetchAt: rawData.lastSuccessfulFetchAt ? String(rawData.lastSuccessfulFetchAt) : null,
+        firstSeenAt: rawData.firstSeenAt || null,
+        lastUpdatedAt: rawData.lastUpdatedAt || null,
+        lastCountChangeAt: rawData.lastCountChangeAt || null,
+        lastSuccessfulFetchAt: rawData.lastSuccessfulFetchAt || null,
         source: rawData.source || 'SIH 2026 Portal',
       };
     };

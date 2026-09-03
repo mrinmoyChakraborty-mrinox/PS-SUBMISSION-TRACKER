@@ -10,22 +10,22 @@ export interface ProblemStatement {
   percentage: number;
   raw: string;
   status: 'live' | 'stale' | 'error' | 'unknown';
-  firstSeenAt: string | null;
-  lastUpdatedAt: string | null;
-  lastCountChangeAt: string | null;
-  lastSuccessfulFetchAt: string | null;
+  firstSeenAt: any;
+  lastUpdatedAt: any;
+  lastCountChangeAt: any;
+  lastSuccessfulFetchAt: any;
   source: string;
 }
 
 export interface HistoryEntry {
   count: number;
   previousCount: number;
-  timestamp: string | number;
+  timestamp: any;
 }
 
 export interface CollectorStatus {
   status: 'running' | 'error' | 'idle';
-  lastRunAt: string | null;
+  lastRunAt: any;
   lastError: string | null;
 }
 
