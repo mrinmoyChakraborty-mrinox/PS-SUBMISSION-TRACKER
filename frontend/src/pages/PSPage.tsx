@@ -16,10 +16,20 @@ export const PSPage: React.FC = () => {
   const { isTracked, addPS } = useTrackedPS();
 
   useEffect(() => {
-    if (id) {
-      document.title = `${id} Submission Count — SIH 2026`;
+    if (id && data) {
+      document.title = `${id} — ${data.title.substring(0, 45)}... | SIH 2026 Submission Tracker`;
+      
+      const metaDescription = document.querySelector('meta[name="description"]');
+      if (metaDescription) {
+        metaDescription.setAttribute(
+          'content',
+          `Track live submission counts for Smart India Hackathon 2026 Problem Statement ${id} (${data.title}). Current submissions: ${data.count}/${data.capacity} (${data.percentage}% filled).`
+        );
+      }
+    } else if (id) {
+      document.title = `${id} Submission Count — SIH 2026 Live Tracker`;
     }
-  }, [id]);
+  }, [id, data]);
 
   if (loading) {
     return (

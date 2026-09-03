@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger("CollectorNode")
 
 NODE_ID = os.getenv("NODE_ID", f"node-{uuid.uuid4().hex[:8]}")
-COLLECTOR_INTERVAL = int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "60"))
+COLLECTOR_INTERVAL = 60  # seconds
 LEASE_TIMEOUT_SECONDS = 45
 
 
