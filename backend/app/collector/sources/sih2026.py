@@ -171,11 +171,11 @@ class SIH2026Source:
             headers = [th.get_text(strip=True).lower()
                        for th in thead.find_all("th")]
             for i, h in enumerate(headers):
-                if "ps number" in h or "ps no" in h:
+                if "ps number" in h or "ps no" in h or "ps id" in h:
                     col_ps_id = i
-                elif "submitted" in h or "idea" in h or "count" in h:
+                elif "submitted idea" in h or "submissions" in h or "submitted count" in h:
                     col_count = i
-                elif "title" in h or "problem statement" in h:
+                elif "title" in h or "problem statement title" in h:
                     col_title = i
                 elif "category" in h:
                     col_category = i
@@ -188,8 +188,8 @@ class SIH2026Source:
         min_cols = max(col_ps_id, col_count, col_title,
                        col_category, col_theme, col_deadline) + 1
 
-        for tr in tbody.find_all("tr"):
-            cells = tr.find_all("td")
+        for tr in tbody.find_all("tr", recursive=False):
+            cells = tr.find_all("td", recursive=False)
             if len(cells) < min_cols:
                 continue
 
