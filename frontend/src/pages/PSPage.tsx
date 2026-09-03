@@ -12,7 +12,7 @@ export const PSPage: React.FC = () => {
   const { psId } = useParams<{ psId: string }>();
   const id = psId?.toUpperCase() || '';
   
-  const { data, loading, error, prevCount } = usePSData(id);
+  const { data, loading, isInitializing, error, prevCount } = usePSData(id);
   const { isTracked, addPS } = useTrackedPS();
 
   useEffect(() => {
@@ -25,6 +25,44 @@ export const PSPage: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <div className="glass p-8 sm:p-10 rounded-2xl max-w-lg w-full text-center space-y-6 border border-blue-500/30 shadow-2xl">
+          <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+            <div className="absolute inset-0 bg-blue-500/20 rounded-full animate-ping" />
+            <div className="absolute inset-2 bg-indigo-500/30 rounded-full animate-pulse" />
+            <div className="relative z-10 w-12 h-12 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-blue-500/50">
+              ⚡
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-white tracking-tight">Initializing Tracker for {id}</h2>
+            <p className="text-gray-300 text-sm">
+              Connecting to official Smart India Hackathon 2026 live data stream...
+            </p>
+          </div>
+
+          <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-400 h-full w-3/4 animate-pulse" />
+          </div>
+
+          <div className="flex items-center justify-center text-xs text-blue-400 space-x-2 pt-2">
+            <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+            <span>Fetching live submission count — updates automatically in seconds</span>
+          </div>
+
+          <div className="pt-2">
+            <Link to="/" className="text-xs text-gray-500 hover:text-gray-400 transition-colors">
+              ← Return to Dashboard
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
