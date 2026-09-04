@@ -21,6 +21,11 @@ export function useNotifications(psId: string) {
     const cachedToken = localStorage.getItem('fcm_token');
     if (cachedToken) setToken(cachedToken);
 
+    // Force browser to update service worker to newest version immediately
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (reg) reg.update();
+    }).catch(() => {});
+
     // Setup foreground message listener
     let unsubscribeMessage: (() => void) | null = null;
     getFirebaseMessaging().then((messaging) => {

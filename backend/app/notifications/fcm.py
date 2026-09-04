@@ -121,8 +121,21 @@ def send_ps_notification(ps_id: str, count: int, capacity: int) -> bool:
                 tokens=tokens,
             )
             batch_response = messaging.send_each_for_multicast(multicast_message)
-            logger.info(f"Direct push multicast summary: {batch_response.success_count} succeeded, {batch_response.failure_count} failed")
+            logger.info(f"Direct push multicast summary for {ps_id}: {batch_response.success_count} succeeded, {batch_response.failure_count} failed")
             success = True
+
+            # Auto-prune uninstalled or expired tokens
+            try:
+                from app.services.firestore import get_db
+                db = get_db()
+                for idx, resp in enumerate(batch_response.responses):
+                    if not resp.success and "NotRegistered" in str(resp.exception):
+                        dead_token = tokens[idx]
+                        db.collection("problemStatements").document(ps_id).collection("subscribers").document(dead_token).delete()
+                        db.collection("fcmSubscriptions").document(dead_token).delete()
+                        logger.info(f"Pruned expired token: {dead_token[:15]}...")
+            except Exception as prune_err:
+                logger.debug(f"Token pruning notice: {prune_err}")
         except Exception as err:
             logger.error(f"FCM direct token multicast failed for {ps_id}: {err}")
 

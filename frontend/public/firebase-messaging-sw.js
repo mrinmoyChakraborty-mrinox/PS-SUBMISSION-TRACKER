@@ -2,7 +2,16 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
-// Initialize Firebase directly at root of service worker with current project config
+// 1. Immediate activation so all users instantly get the latest service worker
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim());
+});
+
+// 2. Initialize Firebase with current sihtrackerv2 config
 const firebaseConfig = {
   apiKey: "AIzaSyBN2PSORimiPywgIFgWohA-ArH42dAWAXw",
   authDomain: "sihtrackerv2.firebaseapp.com",
@@ -20,71 +29,36 @@ try {
   console.error('[SW] Firebase init error:', err);
 }
 
-let messaging = null;
+// 3. Setup Firebase Background Message Handler
 try {
-  messaging = firebase.messaging();
-} catch (e) {
-  console.warn('[SW] Firebase messaging unsupported in this context:', e);
-}
-
-// Background push notification handler via Firebase SDK
-if (messaging) {
+  const messaging = firebase.messaging();
+  
   messaging.onBackgroundMessage((payload) => {
-    console.log('[SW] Received background message:', payload);
-    const title = payload.notification?.title || payload.data?.title || 'SIH 2026 Submission Alert';
-    const body = payload.notification?.body || payload.data?.body || 'New problem statement update recorded.';
+    console.log('[SW] onBackgroundMessage payload:', payload);
+
+    const title = payload.notification?.title || payload.data?.title || 'SIH 2026 Live Submission Alert';
+    const body = payload.notification?.body || payload.data?.body || 'New submission count update recorded.';
     const psId = payload.data?.psId || '';
     const url = payload.data?.url || (psId ? `/ps/${psId}` : '/');
 
-    const notificationOptions = {
+    const options = {
       body: body,
       icon: '/logo.png',
       badge: '/logo.png',
       vibrate: [200, 100, 200],
       data: { url: url, psId: psId },
-      tag: psId ? `sih-${psId}` : 'sih-general-alert',
+      tag: psId ? `sih-${psId}` : 'sih-alert',
       renotify: true,
       requireInteraction: true
     };
 
-    return self.registration.showNotification(title, notificationOptions);
+    return self.registration.showNotification(title, options);
   });
+} catch (e) {
+  console.warn('[SW] Firebase background messaging init error:', e);
 }
 
-// Native push event listener as a secondary safeguard
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-  try {
-    const rawText = event.data.text();
-    let data = {};
-    try {
-      data = JSON.parse(rawText);
-    } catch (_) {
-      data = { body: rawText };
-    }
-
-    const title = data.notification?.title || data.title || 'SIH 2026 Live Alert';
-    const body = data.notification?.body || data.body || 'Live count updated!';
-    const psId = data.data?.psId || data.psId || '';
-    const url = data.data?.url || (psId ? `/ps/${psId}` : '/');
-
-    event.waitUntil(
-      self.registration.showNotification(title, {
-        body: body,
-        icon: '/logo.png',
-        badge: '/logo.png',
-        vibrate: [200, 100, 200],
-        data: { url: url, psId: psId },
-        tag: psId ? `sih-${psId}` : 'sih-alert',
-        renotify: true
-      })
-    );
-  } catch (err) {
-    console.error('[SW] Push event handling error:', err);
-  }
-});
-
-// Notification click event handler
+// 4. Click action handler: opens or focuses the specific PS page
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || '/';
