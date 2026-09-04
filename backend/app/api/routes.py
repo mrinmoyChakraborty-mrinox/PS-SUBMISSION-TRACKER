@@ -61,6 +61,9 @@ async def track_ps(ps_id: str, request: Request):
 class SubscribeRequest(BaseModel):
     token: str
 
+class TestNotificationRequest(BaseModel):
+    token: str
+
 @router.post("/ps/{ps_id}/subscribe")
 async def subscribe_ps(ps_id: str, payload: SubscribeRequest):
     ps_id_upper = ps_id.upper()
@@ -69,14 +72,46 @@ async def subscribe_ps(ps_id: str, payload: SubscribeRequest):
     if not payload.token:
         raise HTTPException(status_code=400, detail="FCM Token is required")
         
+    now = datetime.now(timezone.utc)
+    token = payload.token.strip()
+    topic = f"sih2026_ps_{ps_id_upper}"
+    
+    # 1. Subscribe to FCM Topic via Admin SDK
     try:
         from firebase_admin import messaging
-        topic = f"sih2026_ps_{ps_id_upper}"
-        messaging.subscribe_to_topic([payload.token], topic)
-    except Exception:
-        pass
+        sub_resp = messaging.subscribe_to_topic([token], topic)
+        logger.info(f"FCM topic subscribe result for {ps_id_upper}: {sub_resp.success_count} success, {sub_resp.failure_count} failure")
+    except Exception as e:
+        logger.warning(f"Failed to subscribe token to topic {topic}: {e}")
+
+    # 2. Persist token in Firestore for direct multicast sending
+    try:
+        db = firestore.get_db()
+        db.collection("problemStatements").document(ps_id_upper).collection("subscribers").document(token).set({
+            "token": token,
+            "subscribedAt": now
+        }, merge=True)
+        
+        db.collection("fcmSubscriptions").document(token).set({
+            "token": token,
+            "psIds": firestore.firestore.ArrayUnion([ps_id_upper]),
+            "updatedAt": now
+        }, merge=True)
+        logger.info(f"Saved FCM token to Firestore subscribers for {ps_id_upper}")
+    except Exception as e:
+        logger.warning(f"Failed to save subscriber token to Firestore: {e}")
 
     return {"status": "success", "message": f"Subscribed token to {ps_id_upper}"}
+
+@router.post("/test-notification")
+async def trigger_test_notification(payload: TestNotificationRequest):
+    if not payload.token:
+        raise HTTPException(status_code=400, detail="FCM Token is required")
+    from app.notifications.fcm import send_test_notification
+    result = send_test_notification(payload.token.strip())
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Failed to send test notification"))
+    return {"status": "success", "message": "Test notification sent successfully"}
 
 @router.get("/health")
 async def health_check():
