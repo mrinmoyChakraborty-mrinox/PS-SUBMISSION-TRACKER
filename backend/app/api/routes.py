@@ -1,4 +1,5 @@
 import re
+import logging
 from typing import Dict, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
@@ -6,6 +7,7 @@ from pydantic import BaseModel
 from app.services import firestore
 from app.collector.sources.sih2026 import SIH2026Source
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 PS_ID_REGEX = re.compile(r"^SIH26\d{3}$")
@@ -13,7 +15,17 @@ PS_ID_REGEX = re.compile(r"^SIH26\d{3}$")
 # Simple in-memory rate limiting structure: { ip: [timestamps] }
 rate_limits: Dict[str, list[datetime]] = {}
 
-def check_rate_limit(ip: str) -> None:
+def get_client_ip(request: Request) -> str:
+    """Extract real client IP behind reverse proxies (Render, Cloudflare, Vercel)."""
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+def check_rate_limit(ip: str, max_requests: int = 60) -> None:
     now = datetime.now(timezone.utc)
     if ip not in rate_limits:
         rate_limits[ip] = []
@@ -21,7 +33,7 @@ def check_rate_limit(ip: str) -> None:
     # Keep only timestamps within last 60 seconds
     rate_limits[ip] = [ts for ts in rate_limits[ip] if (now - ts).total_seconds() < 60]
     
-    if len(rate_limits[ip]) >= 10:
+    if len(rate_limits[ip]) >= max_requests:
         raise HTTPException(status_code=429, detail="Too Many Requests")
         
     rate_limits[ip].append(now)
@@ -49,8 +61,8 @@ async def get_ps_history(ps_id: str):
 
 @router.post("/ps/{ps_id}/track")
 async def track_ps(ps_id: str, request: Request):
-    ip = request.client.host if request.client else "unknown"
-    check_rate_limit(ip)
+    ip = get_client_ip(request)
+    check_rate_limit(ip, max_requests=100)
     
     ps_id_upper = ps_id.upper()
     if not PS_ID_REGEX.match(ps_id_upper):
