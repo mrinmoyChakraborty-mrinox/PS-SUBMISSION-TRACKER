@@ -26,7 +26,7 @@ export function useHistory(psId: string, range: string) {
     const fetchHistory = async () => {
       setLoading(true);
       try {
-        const data = await api.getHistory(targetId);
+        let data = await api.getHistory(targetId);
         const now = Date.now();
         
         let hours = 24;
@@ -37,13 +37,58 @@ export function useHistory(psId: string, range: string) {
         
         const cutoff = now - hours * 3600 * 1000;
         
-        const normalized = data.map((d: any) => ({
+        let normalized = data.map((d: any) => ({
           count: typeof d.count === 'number' ? d.count : 0,
           previousCount: typeof d.previousCount === 'number' ? d.previousCount : 0,
           timestamp: parseTimestamp(d.timestamp),
         }));
 
-        const filtered = normalized.filter(d => d.timestamp >= cutoff);
+        // Fallback: if backend still returned empty (e.g. old deploy), synthesize
+        // a baseline point from the current PS document so the graph has saved
+        // data even when collector has only run once. The first point's timestamp
+        // is the PS's last update time (which equals firstSeenAt initially).
+        if (normalized.length === 0) {
+          try {
+            const ps = await api.getPS(targetId);
+            const ts = parseTimestamp(ps.lastCountChangeAt || ps.firstSeenAt || ps.lastSuccessfulFetchAt || now);
+            normalized = [{ count: ps.count ?? 0, previousCount: ps.count ?? 0, timestamp: ts }];
+          } catch (_) {
+            // no PS fallback available
+          }
+        }
+
+        let filtered = normalized.filter(d => d.timestamp >= cutoff);
+
+        // If all points are outside the selected range, keep the most recent
+        // point so the graph is never empty — shows a flat line at the last
+        // known count instead of "No count changes recorded yet".
+        if (filtered.length === 0 && normalized.length > 0) {
+          // For single-point baseline, synthesize a second point at 'now' so
+          // AreaChart renders a visible flat line rather than a single dot.
+          const last = normalized[normalized.length - 1];
+          if (normalized.length === 1 && last.timestamp < cutoff) {
+            filtered = [
+              { ...last, timestamp: cutoff },
+              { ...last, timestamp: now },
+            ];
+          } else {
+            filtered = normalized.slice(-1);
+          }
+        }
+
+        // Ensure at least 2 points for a visible line when backend only gave one
+        // baseline entry inside range: duplicate it at 'now' to render flat line.
+        if (filtered.length === 1) {
+          const only = filtered[0];
+          // If point is older than 5 min, add a current flat point
+          if (now - only.timestamp > 5 * 60 * 1000) {
+            filtered = [only, { ...only, timestamp: now }];
+          }
+        }
+
+        // Sort ascending for chart
+        filtered.sort((a, b) => a.timestamp - b.timestamp);
+
         setHistory(filtered);
         setError(null);
       } catch (err) {
