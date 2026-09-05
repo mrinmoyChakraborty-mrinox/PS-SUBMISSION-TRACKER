@@ -33,15 +33,17 @@ from app.services.firestore import get_db
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("CollectorNode")
 
 # ── Node identity ─────────────────────────────────────────────────────────────
 HOSTNAME = os.getenv("COMPUTERNAME", os.getenv("HOSTNAME", socket.gethostname()))
 NODE_ID = os.getenv("NODE_ID", f"node-{HOSTNAME.lower()}-{uuid.uuid4().hex[:6]}")
-COLLECTOR_INTERVAL = int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "60"))
-LEASE_TIMEOUT_SECONDS = 90   # declare old leader dead after 90s of silence
+COLLECTOR_INTERVAL = int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "1200"))
+LEASE_TIMEOUT_SECONDS = (
+    1500  # declare old leader dead after 25 min (must be > interval of 20 min)
+)
 
 # Friendly display name
 if "LAPTOP-D3EKRMRS" in HOSTNAME.upper():
@@ -52,18 +54,23 @@ else:
 
 # ── Firestore helpers ─────────────────────────────────────────────────────────
 
+
 async def update_heartbeat() -> None:
     """Write a heartbeat document to Firestore so the UI can show node status."""
     now = datetime.now(timezone.utc)
     try:
-        get_db().collection("system").document("collectorNodes") \
-            .collection("nodes").document(NODE_ID).set({
+        get_db().collection("system").document("collectorNodes").collection(
+            "nodes"
+        ).document(NODE_ID).set(
+            {
                 "nodeId": NODE_ID,
                 "hostname": HOSTNAME,
                 "displayName": NODE_DISPLAY,
                 "lastHeartbeat": now,
-                "status": "online"
-            }, merge=True)
+                "status": "online",
+            },
+            merge=True,
+        )
     except Exception as e:
         logger.warning(f"Heartbeat write failed: {e}")
 
@@ -87,11 +94,13 @@ async def acquire_or_renew_lease() -> bool:
 
             # Already the leader — just renew
             if current_leader == NODE_ID:
-                lease_ref.update({
-                    "lastRenewedAt": now,
-                    "hostname": HOSTNAME,
-                    "displayName": NODE_DISPLAY
-                })
+                lease_ref.update(
+                    {
+                        "lastRenewedAt": now,
+                        "hostname": HOSTNAME,
+                        "displayName": NODE_DISPLAY,
+                    }
+                )
                 return True
 
             # Check if the current leader is still alive
@@ -104,26 +113,31 @@ async def acquire_or_renew_lease() -> bool:
                     )
                     return False
 
-            logger.info(f"Leader lease expired ({LEASE_TIMEOUT_SECONDS}s). Claiming leadership...")
+            logger.info(
+                f"Leader lease expired ({LEASE_TIMEOUT_SECONDS}s). Claiming leadership..."
+            )
 
         # Claim leadership
-        lease_ref.set({
-            "leaderNodeId": NODE_ID,
-            "hostname": HOSTNAME,
-            "displayName": NODE_DISPLAY,
-            "lastRenewedAt": now,
-            "claimedAt": now,
-            "status": "online"
-        })
+        lease_ref.set(
+            {
+                "leaderNodeId": NODE_ID,
+                "hostname": HOSTNAME,
+                "displayName": NODE_DISPLAY,
+                "lastRenewedAt": now,
+                "claimedAt": now,
+                "status": "online",
+            }
+        )
         logger.info(f"✅ Leadership claimed by {NODE_DISPLAY}")
         return True
 
     except Exception as e:
         logger.error(f"Lease check failed: {e} — running in fallback single-node mode")
-        return True   # Safe fallback: run anyway if Firestore is unreachable
+        return True  # Safe fallback: run anyway if Firestore is unreachable
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
+
 
 async def main() -> None:
     logger.info("=" * 60)
